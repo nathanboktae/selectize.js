@@ -65,6 +65,7 @@ module.exports = function(config) {
 		frameworks: ['mocha', 'chai'],
 		files: [
 			'dist/css/selectize.default.css',
+			'node_modules/babel-core/browser-polyfill.js',
 			'bower_components/jquery/jquery.js',
 			'bower_components/microplugin/src/microplugin.js',
 			'bower_components/sifter/sifter.js',

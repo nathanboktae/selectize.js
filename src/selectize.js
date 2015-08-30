@@ -4,16 +4,15 @@ var Selectize = function($input, settings) {
 	input.selectize = self;
 
 	// detect rtl environment
-	var computedStyle = window.getComputedStyle && window.getComputedStyle(input, null);
-	dir = computedStyle ? computedStyle.getPropertyValue('direction') : input.currentStyle && input.currentStyle.direction;
-	dir = dir || $input.parents('[dir]:first').attr('dir') || '';
+	var dir = window.getComputedStyle(input, null).getPropertyValue('direction');
 
 	// setup default state
-	$.extend(self, {
+	Object.assign(self, {
 		order            : 0,
 		settings         : settings,
+		input            : input,
 		$input           : $input,
-		tabIndex         : $input.attr('tabindex') || '',
+		tabIndex         : (input.attributes.tabindex && input.attributes.tabindex.value) || '',
 		tagType          : input.tagName.toLowerCase() === 'select' ? TAG_SELECT : TAG_INPUT,
 		rtl              : /rtl/i.test(dir),
 
@@ -21,7 +20,7 @@ var Selectize = function($input, settings) {
 		highlightedValue : null,
 		isOpen           : false,
 		isDisabled       : false,
-		isRequired       : $input.is('[required]'),
+		isRequired       : !!input.attributes.required,
 		isInvalid        : false,
 		isLocked         : false,
 		isFocused        : false,
@@ -91,7 +90,7 @@ MicroPlugin.mixin(Selectize);
 // methods
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-$.extend(Selectize.prototype, {
+Object.assign(Selectize.prototype, {
 
 	/**
 	 * Creates all elements and sets up event bindings.
@@ -101,8 +100,8 @@ $.extend(Selectize.prototype, {
 		var settings  = self.settings;
 		var eventNS   = self.eventNS;
 		var $window   = $(window);
-		var $document = $(document);
 		var $input    = self.$input;
+		var input     = self.input;
 
 		var $wrapper;
 		var $control;
@@ -131,7 +130,7 @@ $.extend(Selectize.prototype, {
 		}
 
 		$wrapper.css({
-			width: $input[0].style.width
+			width: input.style.width
 		});
 
 		if (self.plugins.names.length) {
@@ -168,6 +167,12 @@ $.extend(Selectize.prototype, {
 		self.$dropdown         = $dropdown;
 		self.$dropdown_content = $dropdown_content;
 
+		self.wrapper          = $wrapper[0];
+		self.control          = $control[0];
+		self.control_input    = $control_input[0];
+		self.dropdown         = $dropdown[0];
+		self.dropdown_content = $dropdown_content[0];
+
 		$dropdown.on('mouseenter', '[data-selectable]', function() { return self.onOptionHover.apply(self, arguments); });
 		$dropdown.on('mousedown click', '[data-selectable]', function() { return self.onOptionSelect.apply(self, arguments); });
 		watchChildEvent($control, 'mousedown', '*:not(input)', function() { return self.onItemSelect.apply(self, arguments); });
@@ -189,19 +194,21 @@ $.extend(Selectize.prototype, {
 			paste     : function() { return self.onPaste.apply(self, arguments); }
 		});
 
-		$document.on('keydown' + eventNS, function(e) {
+		var keyDownListener = function(e) {
 			self.isCmdDown = e[IS_MAC ? 'metaKey' : 'ctrlKey'];
 			self.isCtrlDown = e[IS_MAC ? 'altKey' : 'ctrlKey'];
 			self.isShiftDown = e.shiftKey;
-		});
+		};
+		document.addEventListener('keydown', keyDownListener);
 
-		$document.on('keyup' + eventNS, function(e) {
+		var keyUpListener = function(e) {
 			if (e.keyCode === KEY_CTRL) self.isCtrlDown = false;
 			if (e.keyCode === KEY_SHIFT) self.isShiftDown = false;
 			if (e.keyCode === KEY_CMD) self.isCmdDown = false;
-		});
+		};
+		document.addEventListener('keyup', keyUpListener);
 
-		$document.on('mousedown' + eventNS, function(e) {
+		var mouseDownListener = function(e) {
 			if (self.isFocused) {
 				// prevent events on the dropdown scrollbar from causing the control to blur
 				if (e.target === self.$dropdown[0] || e.target.parentNode === self.$dropdown[0]) {
@@ -212,16 +219,22 @@ $.extend(Selectize.prototype, {
 					self.blur(e.target);
 				}
 			}
-		});
+		};
+		document.addEventListener('mousedown', mouseDownListener);
+		self.documentListeners = [keyDownListener, keyUpListener, mouseDownListener];
 
-		$window.on(['scroll' + eventNS, 'resize' + eventNS].join(' '), function() {
+		var scrollResizeListener = function() {
 			if (self.isOpen) {
 				self.positionDropdown.apply(self, arguments);
 			}
-		});
-		$window.on('mousemove' + eventNS, function() {
+		}
+		window.addEventListener('scroll', scrollResizeListener);
+		window.addEventListener('resize', scrollResizeListener);
+		var mouseMoveListener = function() {
 			self.ignoreHover = false;
-		});
+		};
+		window.addEventListener('mousemove', mouseMoveListener);
+		self.windowListeners = [scrollResizeListener, mouseMoveListener];
 
 		// store original children and tab index so that they can be
 		// restored when the destroy() method is called.
@@ -232,7 +245,7 @@ $.extend(Selectize.prototype, {
 
 		$input.attr('tabindex', -1).hide().after(self.$wrapper);
 
-		if ($.isArray(settings.items)) {
+		if (Array.isArray(settings.items)) {
 			self.setValue(settings.items);
 			delete settings.items;
 		}
@@ -295,7 +308,7 @@ $.extend(Selectize.prototype, {
 			}
 		};
 
-		self.settings.render = $.extend({}, templates, self.settings.render);
+		self.settings.render = Object.assign({}, templates, self.settings.render);
 	},
 
 	/**
@@ -1000,10 +1013,10 @@ $.extend(Selectize.prototype, {
 		// perform search
 		if (query !== self.lastQuery) {
 			self.lastQuery = query;
-			result = self.sifter.search(query, $.extend(options, {score: calculateScore}));
+			result = self.sifter.search(query, Object.assign(options, {score: calculateScore}));
 			self.currentResults = result;
 		} else {
-			result = $.extend(true, {}, self.currentResults);
+			result = Object.assign(true, {}, self.currentResults);
 		}
 
 		// filter out selected items
@@ -1052,7 +1065,7 @@ $.extend(Selectize.prototype, {
 			option      = self.options[results.items[i].id];
 			option_html = self.render('option', option);
 			optgroup    = option[self.settings.optgroupField] || '';
-			optgroups   = $.isArray(optgroup) ? optgroup : [optgroup];
+			optgroups   = Array.isArray(optgroup) ? optgroup : [optgroup];
 
 			for (j = 0, k = optgroups && optgroups.length; j < k; j++) {
 				optgroup = optgroups[j];
@@ -1085,7 +1098,7 @@ $.extend(Selectize.prototype, {
 				// then pass it to the wrapper template
 				html_children = self.render('optgroup_header', self.optgroups[optgroup]) || '';
 				html_children += groups[optgroup].join('');
-				html.push(self.render('optgroup', $.extend({}, self.optgroups[optgroup], {
+				html.push(self.render('optgroup', Object.assign({}, self.optgroups[optgroup], {
 					html: html_children
 				})));
 			} else {
@@ -1159,7 +1172,7 @@ $.extend(Selectize.prototype, {
 	addOption: function(data) {
 		var i, n, value, self = this;
 
-		if ($.isArray(data)) {
+		if (Array.isArray(data)) {
 			for (i = 0, n = data.length; i < n; i++) {
 				self.addOption(data[i]);
 			}
@@ -1406,7 +1419,7 @@ $.extend(Selectize.prototype, {
 	 * @param {boolean} silent
 	 */
 	addItems: function(values, silent) {
-		var items = $.isArray(values) ? values : [values];
+		var items = Array.isArray(values) ? values : [values];
 		for (var i = 0, n = items.length; i < n; i++) {
 			this.isPending = (i < n - 1);
 			this.addItem(items[i], silent);
@@ -1622,7 +1635,7 @@ $.extend(Selectize.prototype, {
 			.toggleClass('full', isFull).toggleClass('not-full', !isFull)
 			.toggleClass('input-active', self.isFocused && !self.isInputHidden)
 			.toggleClass('dropdown-active', self.isOpen)
-			.toggleClass('has-options', !$.isEmptyObject(self.options))
+			.toggleClass('has-options', !!Object.keys(self.options).length)
 			.toggleClass('has-items', self.items.length > 0);
 
 		self.$control_input.data('grow', !isFull && !isLocked);
@@ -1974,7 +1987,7 @@ $.extend(Selectize.prototype, {
 	 */
 	enable: function() {
 		var self = this;
-		self.$input.prop('disabled', false);
+		self.input.removeAttribute('disabled');
 		self.$control_input.prop('disabled', false).prop('tabindex', self.tabIndex);
 		self.isDisabled = false;
 		self.unlock();
@@ -1987,13 +2000,16 @@ $.extend(Selectize.prototype, {
 	 */
 	destroy: function() {
 		var self = this;
-		var eventNS = self.eventNS;
 		var revertSettings = self.revertSettings;
 
 		self.trigger('destroy');
 		self.off();
-		self.$wrapper.remove();
-		self.$dropdown.remove();
+		if (self.wrapper.parentElement) {
+			self.wrapper.parentElement.removeChild(self.wrapper);
+		}
+		if (self.dropdown.parentElement) {
+			self.dropdown.parentElement.removeChild(self.dropdown);
+		}
 
 		self.$input
 			.html('')
@@ -2006,11 +2022,14 @@ $.extend(Selectize.prototype, {
 		self.$control_input.removeData('grow');
 		self.$input.removeData('selectize');
 
-		$(window).off(eventNS);
-		$(document).off(eventNS);
-		$(document.body).off(eventNS);
+		self.windowListeners.forEach(function(listener) {
+		  window.removeEventListener(listener);
+		});
+		self.documentListeners.forEach(function(listener) {
+		  document.removeEventListener(listener);
+		});
 
-		delete self.$input[0].selectize;
+		delete self.input.selectize;
 	},
 
 	/**
